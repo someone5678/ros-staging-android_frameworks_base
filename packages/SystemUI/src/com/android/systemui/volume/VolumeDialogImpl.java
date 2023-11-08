@@ -545,6 +545,13 @@ public class VolumeDialogImpl implements VolumeDialog, Dumpable,
 
     private void initDialog(int lockTaskModeState) {
         Log.d(TAG, "initDialog: called!");
+        if (mDialog != null) {
+            mDialog.dismiss();
+            mDialog = null;
+        }
+        if (mConfigurableTexts != null) {
+            mConfigurableTexts = null;
+        }
         mDialog = new CustomDialog(mContext);
         initDimens();
 
@@ -1737,7 +1744,7 @@ public class VolumeDialogImpl implements VolumeDialog, Dumpable,
         mHandler.removeMessages(H.DISMISS);
         rescheduleTimeoutH();
 
-        if (mConfigChanged) {
+        if (mDialog == null) {
             initDialog(lockTaskModeState); // resets mShowing to false
             mConfigurableTexts.update();
             mConfigChanged = false;
@@ -1853,6 +1860,7 @@ public class VolumeDialogImpl implements VolumeDialog, Dumpable,
                     if (mDialog != null) {
                         mDialog.dismiss();
                     }
+                    mDialog = null;
                     tryToRemoveCaptionsTooltip();
                     mExpanded = false;
                     mAnimatingRows = 0;
