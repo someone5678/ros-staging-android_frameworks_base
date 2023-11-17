@@ -308,7 +308,6 @@ public class VolumeDialogImpl implements VolumeDialog, Dumpable,
     private boolean mHovering = false;
     private final boolean mShowActiveStreamOnly;
     private boolean mIsAnimatingDismiss = false;
-    private boolean mIsDismissed = true;
     private boolean mHasSeenODICaptionsTooltip;
     private ViewStub mODICaptionsTooltipViewStub;
     private View mODICaptionsTooltipView = null;
@@ -1734,10 +1733,6 @@ public class VolumeDialogImpl implements VolumeDialog, Dumpable,
         mHandler.removeMessages(H.DISMISS);
         rescheduleTimeoutH();
 
-        if (mIsDismissed) {
-            adjustPositionOnScreen();
-        }
-
         if (mDialog == null) {
             initDialog(lockTaskModeState); // resets mShowing to false
             mConfigurableTexts.update();
@@ -1752,7 +1747,6 @@ public class VolumeDialogImpl implements VolumeDialog, Dumpable,
         mShowing = true;
         mIsAnimatingDismiss = false;
         mDialog.show();
-        mIsDismissed = false;
         Events.writeEvent(Events.EVENT_SHOW_DIALOG, reason, keyguardLocked);
         mController.notifyVisible(true);
         mController.getCaptionsComponentState(false);
@@ -1859,7 +1853,7 @@ public class VolumeDialogImpl implements VolumeDialog, Dumpable,
                     mAnimatingRows = 0;
                     mDefaultRow = null;
                     mIsAnimatingDismiss = false;
-                    mIsDismissed = true;
+                    mDialog = null;
 
                     hideRingerDrawer();
                     mController.notifyVisible(false);
