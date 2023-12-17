@@ -25,7 +25,6 @@ import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.graphics.Color
 import android.os.AsyncTask
-import android.os.Handler
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.util.AttributeSet
@@ -35,18 +34,20 @@ import android.view.animation.AccelerateDecelerateInterpolator
 import android.view.animation.LinearInterpolator
 import android.view.animation.OvershootInterpolator
 
+import androidx.core.animation.doOnEnd
+import androidx.lifecycle.lifecycleScope
+
 import com.android.systemui.R
 import com.android.systemui.statusbar.policy.ConfigurationController
 
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 
 class FaceUnlockImageView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
 ) : ImageView(context, attrs, defStyleAttr) {
 
-    private val DELAY_HIDE_DURATION = 1500
+    private const val DELAY_HIDE_DURATION = 1500
 
     enum class State {
         SCANNING, NOT_VERIFIED, SUCCESS, HIDDEN
@@ -56,8 +57,7 @@ class FaceUnlockImageView @JvmOverloads constructor(
     private val dismissAnimation: ObjectAnimator = createDismissAnimation()
     private val scanningAnimation: ObjectAnimator = createScanningAnimation()
     private val successAnimation: ObjectAnimator = createSuccessRotationAnimation()
-    private val failureShakeAnimation: AnimatorSet = createShakeAnimation(10f)
-    private val handler = Handler()
+    private val failureShakeAnimation: ObjectAnimator = createShakeAnimation(10f)
     private val vibrator: Vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
 
     companion object {
@@ -115,11 +115,11 @@ class FaceUnlockImageView @JvmOverloads constructor(
                 and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         val darkColor = context.getColor(R.color.island_background_color_dark)
         val lightColor = context.getColor(R.color.island_background_color_light)
-        if ((this as? View)?.id == R.id.bouncer_face_unlock_icon) {
-            imageTintList = ColorStateList.valueOf(if (isDark) lightColor else darkColor)
+        imageTintList = ColorStateList.valueOf(if (this.id == R.id.bouncer_face_unlock_icon) {
+            if (isDark) lightColor else darkColor
         } else {
-            imageTintList = ColorStateList.valueOf(Color.parseColor("#FFFFFF"))
-        }
+            Color.parseColor("#FFFFFF")
+        })
     }
 
     fun setState(state: State) {
@@ -140,43 +140,29 @@ class FaceUnlockImageView @JvmOverloads constructor(
     }
 
     private fun startOvershootAnimation() {
-        val overshootAnimator = ObjectAnimator.ofPropertyValuesHolder(
-            this,
-            PropertyValuesHolder.ofFloat("scaleX", 0f, 1.2f, 1f),
-            PropertyValuesHolder.ofFloat("scaleY", 0f, 1.2f, 1f)
-        )
-        overshootAnimator.duration = 500
-        overshootAnimator.interpolator = OvershootInterpolator(1.5f)
-        overshootAnimator.start()
+        animate().scaleX(1.2f).scaleY(1.2f).setDuration(500).setInterpolator(OvershootInterpolator(1.5f)).start()
     }
 
-
     private fun createScanningAnimation(): ObjectAnimator {
-        val scaleX = PropertyValuesHolder.ofFloat("scaleX", 1f, 1.2f, 1f)
-        val scaleY = PropertyValuesHolder.ofFloat("scaleY", 1f, 1.2f, 1f)
-        val scanningAnimator = ObjectAnimator.ofPropertyValuesHolder(this, scaleX, scaleY)
-        scanningAnimator.duration = 1000
-        scanningAnimator.repeatCount = ObjectAnimator.INFINITE
-        scanningAnimator.interpolator = LinearInterpolator()
-        return scanningAnimator
+        return ObjectAnimator.ofPropertyValuesHolder(this, scaleX(1f, 1.2f, 1f), scaleY(1f, 1.2f, 1f)).apply {
+            duration = 1000
+            repeatCount = ObjectAnimator.INFINITE
+            interpolator = LinearInterpolator()
+        }
     }
 
     private fun createSuccessRotationAnimation(): ObjectAnimator {
-        val flipRotation = PropertyValuesHolder.ofFloat("rotationY", 0f, 360f)
-        val flipAnimator = ObjectAnimator.ofPropertyValuesHolder(this, flipRotation)
-        flipAnimator.duration = 800
-        flipAnimator.interpolator = AccelerateDecelerateInterpolator()
-        return flipAnimator
+        return ObjectAnimator.ofFloat(this, View.ROTATION_Y, 0f, 360f).apply {
+            duration = 800
+            interpolator = AccelerateDecelerateInterpolator()
+        }
     }
 
-    private fun createShakeAnimation(amplitude: Float): AnimatorSet {
-        val animatorSet = AnimatorSet()
-        val translationX = PropertyValuesHolder.ofFloat("translationX", 0f, amplitude, -amplitude, amplitude, -amplitude, 0f)
-        val shakeAnimator = ObjectAnimator.ofPropertyValuesHolder(this, translationX)
-        shakeAnimator.duration = 500
-        shakeAnimator.interpolator = AccelerateDecelerateInterpolator()
-        animatorSet.play(shakeAnimator)
-        return animatorSet
+    private fun createShakeAnimation(amplitude: Float): ObjectAnimator {
+        return ObjectAnimator.ofFloat(this, View.TRANSLATION_X, 0f, amplitude, -amplitude, amplitude, -amplitude, 0f).apply {
+            duration = 500
+            interpolator = AccelerateDecelerateInterpolator()
+        }
     }
 
     private fun createDismissAnimation(): ObjectAnimator {
@@ -187,16 +173,12 @@ class FaceUnlockImageView @JvmOverloads constructor(
         ).apply {
             duration = 500
             interpolator = AccelerateDecelerateInterpolator()
-            addListener(object : AnimatorListenerAdapter() {
-                override fun onAnimationEnd(animation: Animator) {
-                    visibility = View.GONE
-                }
-            })
+            doOnEnd { visibility = View.GONE }
         }
     }
 
     private fun vibrate(effect: Int) {
-        GlobalScope.launch(Dispatchers.Main) {
+        lifecycleScope.launch(Dispatchers.Main) {
             val vibrationEffect = VibrationEffect.createPredefined(effect)
             vibrator.vibrate(vibrationEffect)
         }
@@ -209,7 +191,7 @@ class FaceUnlockImageView @JvmOverloads constructor(
                 failureShakeAnimation.cancel()
                 successAnimation.cancel()
                 startOvershootAnimation()
-                handler.post({ scanningAnimation.start() })
+                postOnAnimation { scanningAnimation.start() }
             }
             State.NOT_VERIFIED -> {
                 scanningAnimation.cancel()
@@ -221,19 +203,12 @@ class FaceUnlockImageView @JvmOverloads constructor(
                 scanningAnimation.cancel()
                 failureShakeAnimation.cancel()
                 successAnimation.start()
+                successAnimation.doOnEnd { postOnAnimationDelayed({ dismissAnimation.start() }, DELAY_HIDE_DURATION.toLong()) }
                 vibrate(VibrationEffect.EFFECT_CLICK)
             }
             State.HIDDEN -> {
-                failureShakeAnimation.addListener(object : AnimatorListenerAdapter() {
-                    override fun onAnimationEnd(animation: Animator) {
-                        handler.post({ dismissAnimation.start() })
-                    }
-                })
-                successAnimation.addListener(object : AnimatorListenerAdapter() {
-                    override fun onAnimationEnd(animation: Animator) {
-                        handler.post({ dismissAnimation.start() })
-                    }
-                })
+                failureShakeAnimation.doOnEnd { postOnAnimationDelayed({ dismissAnimation.start() }, (DELAY_HIDE_DURATION / 2).toLong()) }
+                successAnimation.doOnEnd { postOnAnimationDelayed({ dismissAnimation.start() }, (DELAY_HIDE_DURATION / 2).toLong()) }
             }
         }
     }
